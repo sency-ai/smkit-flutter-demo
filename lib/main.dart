@@ -66,11 +66,9 @@ class _WelcomePageState extends State<WelcomePage> {
       MaterialPageRoute<void>(
         builder: (_) => const SessionPage(
           exercises: [
-            'OverheadMobility',
+            'SquatRegular',
             'SquatRegularOverheadStatic',
             'JeffersonCurl',
-            'StandingSideBendRight',
-            'StandingSideBendLeft',
           ],
           showSkeleton: true,
           isAssessment: true,

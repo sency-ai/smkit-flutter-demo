@@ -57,6 +57,7 @@ class _SessionPageState extends State<SessionPage> {
   int _reps = 0;
   bool _inPosition = false;
   bool _lastRepWasGood = false;
+  bool _prevDidFinishMovement = false;
   List<String> _feedbacks = [];
 
   // Elapsed timer
@@ -140,8 +141,6 @@ class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _startSession() async {
-    // ignore: avoid_print
-    print('[SMKit] _startSession called, isAssessment=${widget.isAssessment} viewId=$_cameraViewId');
     try {
       await SmKit.startSession(
         viewId: _cameraViewId,
@@ -152,22 +151,14 @@ class _SessionPageState extends State<SessionPage> {
           enablePhoneCalibration: widget.isAssessment,
         ),
       );
-      // ignore: avoid_print
-      print('[SMKit] _startSession completed OK');
     } catch (e) {
-      // ignore: avoid_print
-      print('[SMKit] _startSession error: $e');
       if (mounted) _showError('$e');
     }
   }
 
   Future<void> _startDetection() async {
-    // ignore: avoid_print
-    print('[SMKit] _startDetection called for exercise=$_currentExercise index=$_exerciseIndex');
     try {
       final result = await SmKit.startDetection(exercise: _currentExercise);
-      // ignore: avoid_print
-      print('[SMKit] _startDetection result: exerciseType=${result?.exerciseType} isDynamic=${result?.exerciseType == SMBaseExerciseType.dynamic_} minRom=${result?.minRom} maxRom=${result?.maxRom}');
       if (mounted) {
         setState(() {
           _isDetecting = true;
@@ -175,6 +166,7 @@ class _SessionPageState extends State<SessionPage> {
           _isDynamic = result?.exerciseType == SMBaseExerciseType.dynamic_;
           _reps = 0;
           _inPosition = false;
+          _prevDidFinishMovement = false;
           _feedbacks = [];
           _timePassed = 0;
           _techniqueScores = [];
@@ -197,8 +189,6 @@ class _SessionPageState extends State<SessionPage> {
 
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('[SMKit] _startDetection error: $e');
       if (mounted) _showError('$e');
     }
   }
@@ -214,10 +204,6 @@ class _SessionPageState extends State<SessionPage> {
           ? _techniqueScores
           : _greenZoneTechniqueScores;
       final feedbacksToShow = _feedbackSet.toList();
-      if (feedbacksToShow.isNotEmpty) {
-        // ignore: avoid_print
-        print('[SMKit Assessment] $_currentExercise feedbacks for summary: ${feedbacksToShow.length} — ${feedbacksToShow.take(5).join("; ")}${feedbacksToShow.length > 5 ? "…" : ""}');
-      }
       final avgScore = scoresToUse.isEmpty
           ? 0.0
           : scoresToUse.reduce((a, b) => a + b) / scoresToUse.length;
@@ -305,8 +291,6 @@ class _SessionPageState extends State<SessionPage> {
   }
 
   void _skipCalibration() {
-    // ignore: avoid_print
-    print('[SMKit] _skipCalibration called, _isPhoneReady=$_isPhoneReady _isBodyInFrame=$_isBodyInFrame _isTooClose=$_isTooClose');
     setState(() {
       _calibrationDismissed = true;
       _boundingBox = null; // dismiss bounding box guide (mirrors iOS beginAssessment removing it)
@@ -394,8 +378,6 @@ class _SessionPageState extends State<SessionPage> {
     if (!mounted) return;
     switch (event.type) {
       case SmKitSessionEventType.captureSessionReady:
-        // ignore: avoid_print
-        print('[SMKit] captureSessionReady received, isAssessment=${widget.isAssessment}');
         setState(() => _sessionReady = true);
         // In assessment: show calibration first; do not start detection until calibration is dismissed.
         if (!widget.isAssessment) {
@@ -432,7 +414,10 @@ class _SessionPageState extends State<SessionPage> {
             _feedbacks = [];
           }
 
-          if (d.didFinishMovement && _isDynamic) {
+          final didFinishMovementRisingEdge =
+              d.didFinishMovement && !_prevDidFinishMovement;
+          _prevDidFinishMovement = d.didFinishMovement;
+          if (didFinishMovementRisingEdge && _isDynamic) {
             _reps++;
             _lastRepWasGood = d.isPerfectForm;
             if (d.isPerfectForm) _perfectRepsCount++;
@@ -448,16 +433,12 @@ class _SessionPageState extends State<SessionPage> {
             // Feedbacks: only when in position (mirrors iOS: if isInPosition { currentFeedbacks.insert })
             if (d.isInPosition || (_isDynamic && d.didFinishMovement)) {
               if (d.feedback.isNotEmpty) {
-                // ignore: avoid_print
-                print('[SMKit Assessment] detectionData feedback: ${d.feedback} (inPosition=${d.isInPosition})');
                 final filtered = isRomInRange
                     ? d.feedback.where((f) => !_romDepthFeedbacks.contains(f))
                     : d.feedback;
                 for (final f in filtered) {
                   _feedbackSet.add(f);
                 }
-                // ignore: avoid_print
-                print('[SMKit Assessment] _feedbackSet size now: ${_feedbackSet.length}');
               }
               if (d.isShallowRep) _feedbackSet.add("Maintain full range of motion");
             }
@@ -472,8 +453,6 @@ class _SessionPageState extends State<SessionPage> {
         });
         break;
       case SmKitSessionEventType.phoneCalibration:
-        // ignore: avoid_print
-        print('[SMKit] phoneCalibration received: isPhoneReady=${event.isPhoneReady}');
         if (event.isPhoneReady != null) {
           setState(() => _isPhoneReady = event.isPhoneReady!);
           // Auto-dismiss calibration once both checks pass.
@@ -484,8 +463,6 @@ class _SessionPageState extends State<SessionPage> {
         break;
       case SmKitSessionEventType.bodyCalibration:
         final cal = event.calibrationData;
-        // ignore: avoid_print
-        print('[SMKit] bodyCalibration received: state=${cal?.state} isTooClose=${cal?.isTooClose}');
         if (cal != null) {
           setState(() {
             switch (cal.state) {
@@ -509,8 +486,6 @@ class _SessionPageState extends State<SessionPage> {
         break;
       case SmKitSessionEventType.boundingBox:
         if (event.boundingBox != null) {
-          // ignore: avoid_print
-          print('[SMKit] boundingBox received: ${event.boundingBox!.x}, ${event.boundingBox!.y}, ${event.boundingBox!.width}x${event.boundingBox!.height}');
           setState(() => _boundingBox = event.boundingBox);
         }
         break;
