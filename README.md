@@ -1,14 +1,12 @@
 # smkit-flutter-demo
 
-Demo Flutter app for [flutter_smkit](https://pub.dev/packages/flutter_smkit) — Sency's SMKit (no-UI) Flutter plugin.
-
-Mirrors the iOS and Android demo apps: exercise selection → camera session → real-time feedback → summary.
+Demo Flutter app for [flutter_smkit](https://pub.dev/packages/flutter_smkit) — Sency's SMKit Flutter plugin.
 
 ## Flows
 
 **2D Session** — Select one or more exercises, enable/disable skeleton overlay, run them sequentially with real-time rep counting and feedback.
 
-**Demo Assessment** — Fixed set of 5 exercises (15 seconds each), body calibration, then a scored summary per exercise.
+**Demo Assessment** — Fixed set of 3 exercises (15 seconds each), body calibration, then a scored summary per exercise.
 
 ## Setup
 
