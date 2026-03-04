@@ -1,0 +1,21 @@
+name: smkit_flutter_demo
+description: Demo app for the flutter_smkit plugin — session and assessment flow.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.4 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_smkit: ^1.0.0
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,135 @@
+# flutter_smkit and SMKit require iOS 16.0.
+platform :ios, '16.0'
+
+# SMKit 1.5.1 (and SMBase) from CocoaPods spec repo — SPM is not released.
+source 'https://bitbucket.org/sencyai/ios_sdks_release.git'
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+# Suppress "master specs repo" warning when using CDN.
+install! 'cocoapods', :warn_for_unused_master_specs_repo => false
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+
+  pod 'SMKit', '1.5.1'
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    # Enforce minimum iOS 12 so Xcode accepts deployment target (supported range 12.0–26.x).
+    target.build_configurations.each do |config|
+      if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 12.0
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      end
+    end
+  end
+
+  # Embed SMBase.framework so dyld can load it at runtime (Runner links against it).
+  # Only apply macOS/BSD compatibility patches to the embed-frameworks script.
+  frameworks_sh = File.join(
+    installer.sandbox.root,
+    'Target Support Files', 'Pods-Runner', 'Pods-Runner-frameworks.sh'
+  )
+  if File.exist?(frameworks_sh)
+    content = File.read(frameworks_sh)
+    patched = content
+    # macOS compatibility: realpath and readlink -f are not available in BSD tools
+    patched = patched.gsub(
+      /echo "\$\(realpath -mq "\$\{0\}"\):\$1: error: Unexpected failure"/,
+      'echo "${0}:$1: error: Unexpected failure"'
+    )
+    patched = patched.gsub(
+      /source="\$\(readlink -f "\$\{source\}"\)"/,
+      %q{source="$(perl -MCwd -e 'print Cwd::realpath($ARGV[0])' "${source}")"}
+    )
+    File.write(frameworks_sh, patched) if patched != content
+  end
+
+  # flutter_smkit is a static framework to avoid a case-insensitive filesystem collision with the
+  # SMKit xcframework (flutter_smkit.framework vs SMKit.framework on macOS HFS+/APFS). Xcode 15+
+  # "debug dylib" splits the app binary and links static frameworks twice, causing duplicate
+  # symbols. Disable it so static pod symbols are only linked once.
+  runner_debug_xcconfig = File.join(
+    installer.sandbox.root,
+    'Target Support Files', 'Pods-Runner', 'Pods-Runner.debug.xcconfig'
+  )
+  if File.exist?(runner_debug_xcconfig)
+    content = File.read(runner_debug_xcconfig)
+    unless content.include?('ENABLE_DEBUG_DYLIB')
+      File.open(runner_debug_xcconfig, 'a') { |f| f.puts "\nENABLE_DEBUG_DYLIB = NO" }
+    end
+    unless content.include?('-framework SMKit')
+      File.open(runner_debug_xcconfig, 'a') { |f| f.puts "\nOTHER_LDFLAGS = $(OTHER_LDFLAGS) -framework SMBase -framework SMKit" }
+    end
+  end
+
+  runner_release_xcconfig = File.join(
+    installer.sandbox.root,
+    'Target Support Files', 'Pods-Runner', 'Pods-Runner.release.xcconfig'
+  )
+  if File.exist?(runner_release_xcconfig)
+    content = File.read(runner_release_xcconfig)
+    unless content.include?('-framework SMKit')
+      File.open(runner_release_xcconfig, 'a') { |f| f.puts "\nOTHER_LDFLAGS = $(OTHER_LDFLAGS) -framework SMBase -framework SMKit" }
+    end
+  end
+
+  runner_profile_xcconfig = File.join(
+    installer.sandbox.root,
+    'Target Support Files', 'Pods-Runner', 'Pods-Runner.profile.xcconfig'
+  )
+  if File.exist?(runner_profile_xcconfig)
+    content = File.read(runner_profile_xcconfig)
+    unless content.include?('-framework SMKit')
+      File.open(runner_profile_xcconfig, 'a') { |f| f.puts "\nOTHER_LDFLAGS = $(OTHER_LDFLAGS) -framework SMBase -framework SMKit" }
+    end
+  end
+
+  # For device builds, ensure linker finds and links SMKit/SMBase xcframework slices.
+  xcframework_paths_ios = "\"$(PODS_ROOT)/SMKit/SMKit.xcframework/ios-arm64\" \"$(PODS_ROOT)/SMBase/SMBase.xcframework/ios-arm64\""
+  xcframework_paths_sim = "\"$(PODS_ROOT)/SMKit/SMKit.xcframework/ios-x86_64-simulator\" \"$(PODS_ROOT)/SMBase/SMBase.xcframework/ios-x86_64-simulator\""
+  [runner_debug_xcconfig, runner_release_xcconfig, runner_profile_xcconfig].each do |xcconfig_path|
+    next unless File.exist?(xcconfig_path)
+    content = File.read(xcconfig_path)
+    to_append = []
+    to_append << "\nFRAMEWORK_SEARCH_PATHS[sdk=iphoneos*] = $(inherited) #{xcframework_paths_ios}" unless content.include?('SMKit.xcframework/ios-arm64')
+    to_append << "\nFRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*] = $(inherited) #{xcframework_paths_sim}" unless content.include?('SMKit.xcframework/ios-x86_64-simulator')
+    unless content.include?('SMKit.xcframework/ios-arm64/SMKit.framework/SMKit')
+      to_append << "\nOTHER_LDFLAGS[sdk=iphoneos*] = $(OTHER_LDFLAGS[sdk=iphoneos*]) -F $(PODS_ROOT)/SMKit/SMKit.xcframework/ios-arm64 -F $(PODS_ROOT)/SMBase/SMBase.xcframework/ios-arm64 -Xlinker -force_load -Xlinker $(PODS_ROOT)/SMKit/SMKit.xcframework/ios-arm64/SMKit.framework/SMKit -Xlinker -force_load -Xlinker $(PODS_ROOT)/SMBase/SMBase.xcframework/ios-arm64/SMBase.framework/SMBase -framework flutter_smkit"
+    end
+    unless content.include?('SMKit.xcframework/ios-x86_64-simulator')
+      to_append << "\nOTHER_LDFLAGS[sdk=iphonesimulator*] = $(OTHER_LDFLAGS[sdk=iphonesimulator*]) -F $(PODS_ROOT)/SMKit/SMKit.xcframework/ios-x86_64-simulator -F $(PODS_ROOT)/SMBase/SMBase.xcframework/ios-x86_64-simulator -framework SMBase -framework SMKit"
+    end
+    next if to_append.empty?
+    File.open(xcconfig_path, 'a') { |f| to_append.each { |line| f.puts line } }
+  end
+end
