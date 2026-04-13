@@ -1,5 +1,5 @@
-# flutter_smkit and SMKit require iOS 16.0.
-platform :ios, '16.0'
+# flutter_smkit 1.0.4 and SMKit 1.6.3 require iOS 17.2.
+platform :ios, '17.2'
 
 # SMKit 1.5.1 (and SMBase) from CocoaPods spec repo — SPM is not released.
 source 'https://bitbucket.org/sencyai/ios_sdks_release.git'
@@ -35,7 +35,7 @@ flutter_ios_podfile_setup
 target 'Runner' do
   use_frameworks!
 
-  pod 'SMKit', '1.5.1'
+  pod 'SMKit', '1.6.3'
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
@@ -47,8 +47,8 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
     # Enforce minimum iOS 12 so Xcode accepts deployment target (supported range 12.0–26.x).
     target.build_configurations.each do |config|
-      if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 12.0
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 17.2
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '17.2'
       end
     end
   end

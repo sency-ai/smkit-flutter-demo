@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_smkit/flutter_smkit.dart';
+import 'package:flutter_smkit/smkit.dart';
 
 import 'pages/pre_session_page.dart';
 import 'pages/session_page.dart';
+import 'pages/workout_builder_page.dart';
 
 void main() {
   runApp(const SmKitDemoApp());
@@ -58,6 +59,12 @@ class _WelcomePageState extends State<WelcomePage> {
   void _startSession() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const PreSessionPage()),
+    );
+  }
+
+  void _startWorkoutBuilder() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const WorkoutBuilderPage()),
     );
   }
 
@@ -124,6 +131,12 @@ class _WelcomePageState extends State<WelcomePage> {
                   label: 'Start 2D Session',
                   color: Colors.blue,
                   onPressed: _isConfigured ? _startSession : null,
+                ),
+                const SizedBox(height: 16),
+                _MenuButton(
+                  label: 'Build Workout',
+                  color: Colors.teal,
+                  onPressed: _isConfigured ? _startWorkoutBuilder : null,
                 ),
                 const SizedBox(height: 16),
                 _MenuButton(
