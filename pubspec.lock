@@ -66,10 +66,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_smkit
-      sha256: d01eb1d8f6ba9c5795712f4de702ff5744264710be4f591f6c1b90d421cc6aa7
+      sha256: "09e87ec9dac19edaf35f7d05b3378114adfa0a5ffc0d349be8751e3e6247d9d5"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.2"
+    version: "1.0.4"
   flutter_test:
     dependency: "direct dev"
     description: flutter

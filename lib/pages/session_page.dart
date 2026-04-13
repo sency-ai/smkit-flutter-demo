@@ -64,12 +64,13 @@ class _SessionPageState extends State<SessionPage> {
   Timer? _ticker;
   double _timePassed = 0.0;
 
-  // ── Calibration state (assessment mode) ──────────────────────────────────
+  // ── Calibration state ────────────────────────────────────────────────────
   // Mirrors CalibrationViewModel from the iOS demo.
   bool _isPhoneReady = false;
   bool _isBodyInFrame = false;
   bool _isTooClose = false; // body calibration: user too close (mirrors iOS demo)
   bool _calibrationDismissed = false; // user pressed Skip or both checks passed
+  double? _phoneAngle; // live phone tilt angle in degrees (0° = upright)
 
   // Bounding box guide (from didRecivedBoundingBox — normalized video coords 0–1)
   BoundingBoxData? _boundingBox;
@@ -77,8 +78,8 @@ class _SessionPageState extends State<SessionPage> {
   bool get _calibrationComplete =>
       _isPhoneReady && _isBodyInFrame && !_isTooClose;
 
-  // Show calibration overlay in assessment until user skips or both checks pass.
-  bool get _showCalibration => widget.isAssessment && !_calibrationDismissed;
+  // Show calibration overlay until user skips or both checks pass (runs once per session).
+  bool get _showCalibration => !_calibrationDismissed;
 
   // ── Countdown (assessment only, 3-2-1 before each exercise) ───────────────
   bool _isCountdown = false;
@@ -147,8 +148,8 @@ class _SessionPageState extends State<SessionPage> {
         settings: SessionSettings(
           phonePosition: 'Floor',
           include3D: false,
-          enableBodyCalibration: widget.isAssessment,
-          enablePhoneCalibration: widget.isAssessment,
+          enableBodyCalibration: true,
+          enablePhoneCalibration: true,
         ),
       );
     } catch (e) {
@@ -379,8 +380,10 @@ class _SessionPageState extends State<SessionPage> {
     switch (event.type) {
       case SmKitSessionEventType.captureSessionReady:
         setState(() => _sessionReady = true);
-        // In assessment: show calibration first; do not start detection until calibration is dismissed.
-        if (!widget.isAssessment) {
+        // Start detection immediately only if calibration is already done (e.g. dismissed).
+        // Both regular and assessment modes now show calibration first; detection starts
+        // from _skipCalibration() once both phone + body checks pass.
+        if (_calibrationDismissed) {
           _startDetection();
         }
         break;
@@ -453,10 +456,13 @@ class _SessionPageState extends State<SessionPage> {
         });
         break;
       case SmKitSessionEventType.phoneCalibration:
+        setState(() {
+          if (event.isPhoneReady != null) _isPhoneReady = event.isPhoneReady!;
+          _phoneAngle = event.phoneAngle;
+        });
         if (event.isPhoneReady != null) {
-          setState(() => _isPhoneReady = event.isPhoneReady!);
           // Auto-dismiss calibration once both checks pass.
-          if (widget.isAssessment && _calibrationComplete && !_calibrationDismissed) {
+          if (_calibrationComplete && !_calibrationDismissed) {
             _skipCalibration();
           }
         }
@@ -479,7 +485,7 @@ class _SessionPageState extends State<SessionPage> {
                 break;
             }
           });
-          if (widget.isAssessment && _calibrationComplete && !_calibrationDismissed) {
+          if (_calibrationComplete && !_calibrationDismissed) {
             _skipCalibration();
           }
         }
@@ -753,6 +759,7 @@ class _SessionPageState extends State<SessionPage> {
               onStop: _quit,
               onSkip: _skipCalibration,
               showPhoneCalibration: true,
+              phoneAngle: _phoneAngle,
             ),
 
           // 3-2-1 countdown overlay (assessment only)
@@ -879,6 +886,7 @@ class _CalibrationOverlay extends StatelessWidget {
     required this.onStop,
     required this.onSkip,
     this.showPhoneCalibration = true,
+    this.phoneAngle,
   });
 
   final bool isPhoneReady;
@@ -891,10 +899,18 @@ class _CalibrationOverlay extends StatelessWidget {
   final VoidCallback onSkip;
   final bool showPhoneCalibration;
 
+  /// Current phone tilt angle in degrees (from vertical). Updates live when available.
+  final double? phoneAngle;
+
   /// Mirrors CalibrationView.statusMessage from iOS demo (order: too close, phone, body, hold still).
   String get _statusMessage {
     if (isTooClose) return 'Too close — step back';
-    if (showPhoneCalibration && !isPhoneReady) return 'Tilt your phone upright';
+    if (showPhoneCalibration && !isPhoneReady) {
+      if (phoneAngle != null) {
+        return 'Tilt your phone upright: ${phoneAngle!.toStringAsFixed(0)}° (0° = upright)';
+      }
+      return 'Tilt your phone upright';
+    }
     if (!isBodyInFrame) return 'Step into the frame';
     return 'Hold still…';
   }
@@ -956,7 +972,9 @@ class _CalibrationOverlay extends StatelessWidget {
                           if (showPhoneCalibration) ...[
                             _CalibrationRow(
                               icon: Icons.phone_iphone,
-                              label: 'Phone angle',
+                              label: phoneAngle != null
+                                  ? 'Phone angle: ${phoneAngle!.toStringAsFixed(0)}°'
+                                  : 'Phone angle',
                               isReady: isPhoneReady,
                             ),
                             const SizedBox(height: 12),
@@ -1155,11 +1173,11 @@ class _BoundingBoxPainter extends CustomPainter {
       ..fillType = ui.PathFillType.evenOdd;
     canvas.drawPath(path, overlayPaint);
 
-    // Border: white or green
+    // Border: green (in position) or red (out of position) — mirrors iOS/Android native implementation
     final borderPaint = Paint()
-      ..color = isInPosition ? Colors.green : Colors.white
+      ..color = isInPosition ? Colors.green : Colors.red
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
+      ..strokeWidth = 4;
     canvas.drawRRect(rrect, borderPaint);
   }
 
