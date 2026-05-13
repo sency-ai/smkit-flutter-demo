@@ -65,11 +65,10 @@ packages:
   flutter_smkit:
     dependency: "direct main"
     description:
-      name: flutter_smkit
-      sha256: "09e87ec9dac19edaf35f7d05b3378114adfa0a5ffc0d349be8751e3e6247d9d5"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.4"
+      path: "../flutter-smkit/packages/smkit"
+      relative: true
+    source: path
+    version: "1.0.5"
   flutter_test:
     dependency: "direct dev"
     description: flutter

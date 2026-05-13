@@ -3,7 +3,7 @@ allprojects {
         google()
         mavenCentral()
         mavenLocal()
-        // Sency Artifactory (same as smkit_ui_bridge_lib) — smkit + smbase at 1.5.0
+        // Sency Artifactory — smkit + smbase at 1.6.4
         maven { url = uri("https://artifacts.sency.ai/artifactory/release") }
         // SMKit Android SDK: clone smkit_android into this project and publish to repo/
         maven { url = rootProject.file("../../smkit_android/repo").toURI() }
