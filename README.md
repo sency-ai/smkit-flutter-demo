@@ -2,6 +2,8 @@
 
 Demo Flutter app for [flutter_smkit](https://pub.dev/packages/flutter_smkit) — Sency's SMKit Flutter plugin.
 
+This demo targets `flutter_smkit` `^1.0.5`, iOS `SMKit` `1.8.3`, and Android `com.sency.smkit:smkit` `1.6.4`.
+
 ## Flows
 
 **2D Session** — Select one or more exercises, enable/disable skeleton overlay, run them sequentially with real-time rep counting and feedback.
@@ -20,9 +22,11 @@ await SmKit.configure(authKey: 'YOUR_AUTH_KEY');
 
 ### iOS
 
-Add **SMKit** and **SMBase** to your Xcode project via Swift Package Manager:
-- In Xcode: **File → Add Package Dependencies**
-- Use the Sency iOS SDK repository
+The demo `ios/Podfile` pins **SMKit** `1.8.3` from the Sency CocoaPods specs repo. After changing SDK versions, run from `ios/`:
+
+```bash
+pod install --repo-update
+```
 
 Add to `ios/Runner/Info.plist`:
 
@@ -33,7 +37,7 @@ Add to `ios/Runner/Info.plist`:
 
 ### Android
 
-Add the SMKit Maven repository to `android/build.gradle`:
+Add the SMKit Maven repository to `android/build.gradle` or use a local `../smkit_android/repo` with `com.sency.smkit:smkit:1.6.4`:
 
 ```groovy
 allprojects {

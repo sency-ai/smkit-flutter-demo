@@ -9,8 +9,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_smkit: ^1.0.4
+  flutter_smkit: ^1.0.5
   permission_handler: ^11.3.1
+
+dependency_overrides:
+  flutter_smkit:
+    path: ../flutter-smkit/packages/smkit
 
 dev_dependencies:
   flutter_test:
