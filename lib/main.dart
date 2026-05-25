@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_smkit/smkit.dart';
 
 import 'pages/pre_session_page.dart';
 import 'pages/session_page.dart';
 import 'pages/workout_builder_page.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: '.env', isOptional: true);
   runApp(const SmKitDemoApp());
 }
 
@@ -35,6 +38,7 @@ class WelcomePage extends StatefulWidget {
 class _WelcomePageState extends State<WelcomePage> {
   bool _isConfiguring = true;
   bool _isConfigured = false;
+  bool _useElevatedMode = true;
   String? _configureError;
 
   @override
@@ -49,36 +53,62 @@ class _WelcomePageState extends State<WelcomePage> {
       _configureError = null;
     });
     try {
-      await SmKit.configure(authKey: '', support3D: false);
-      if (mounted) setState(() { _isConfigured = true; _isConfiguring = false; });
+      final authKey = dotenv.env['API_PUBLIC_KEY']?.trim() ??
+          const String.fromEnvironment('API_PUBLIC_KEY').trim();
+      if (authKey.isEmpty) {
+        throw StateError('Missing API_PUBLIC_KEY in .env');
+      }
+      await SmKit.configure(
+        authKey: authKey,
+        support3D: false,
+        poseModelChoice: SmKitPoseModelChoice.adaptiveChoice,
+      );
+      if (mounted) {
+        setState(() {
+          _isConfigured = true;
+          _isConfiguring = false;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() { _isConfiguring = false; _configureError = '$e'; });
+      if (mounted) {
+        setState(() {
+          _isConfiguring = false;
+          _configureError = '$e';
+        });
+      }
     }
   }
 
   void _startSession() {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const PreSessionPage()),
+      MaterialPageRoute<void>(
+        builder: (_) => PreSessionPage(useElevatedMode: _useElevatedMode),
+      ),
     );
   }
 
   void _startWorkoutBuilder() {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const WorkoutBuilderPage()),
+      MaterialPageRoute<void>(
+        builder: (_) => WorkoutBuilderPage(useElevatedMode: _useElevatedMode),
+      ),
     );
   }
 
   void _startAssessment() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => const SessionPage(
-          exercises: [
-            'SquatRegular',
+        builder: (_) => SessionPage(
+          exercises: const [
+            'OverheadMobility',
             'SquatRegularOverheadStatic',
             'JeffersonCurl',
+            'StandingSideBendRight',
+            'StandingSideBendLeft',
           ],
           showSkeleton: true,
           isAssessment: true,
+          useElevatedMode: _useElevatedMode,
         ),
       ),
     );
@@ -127,6 +157,28 @@ class _WelcomePageState extends State<WelcomePage> {
                   onPressed: _configure,
                 ),
               ] else ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.phone_iphone),
+                    title: const Text(
+                      'Elevated Mode',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    ),
+                    value: _useElevatedMode,
+                    onChanged: (value) =>
+                        setState(() => _useElevatedMode = value),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 _MenuButton(
                   label: 'Start 2D Session',
                   color: Colors.blue,

@@ -21,11 +21,13 @@ class SessionPage extends StatefulWidget {
     super.key,
     required this.exercises,
     required this.showSkeleton,
+    required this.useElevatedMode,
     this.isAssessment = false,
   });
 
   final List<String> exercises;
   final bool showSkeleton;
+  final bool useElevatedMode;
   final bool isAssessment;
 
   @override
@@ -51,7 +53,11 @@ class _SessionPageState extends State<SessionPage> {
   // Detection state
   bool _sessionReady = false;
   bool _isDetecting = false;
+  bool _isStartingDetection = false;
+  bool _detectionStartRequested = false;
   bool _isPaused = false;
+  bool _nativeSessionStarted = false;
+  bool _isClosing = false;
 
   // Rep / position (regular mode)
   int _reps = 0;
@@ -68,7 +74,8 @@ class _SessionPageState extends State<SessionPage> {
   // Mirrors CalibrationViewModel from the iOS demo.
   bool _isPhoneReady = false;
   bool _isBodyInFrame = false;
-  bool _isTooClose = false; // body calibration: user too close (mirrors iOS demo)
+  bool _isTooClose =
+      false; // body calibration: user too close (mirrors iOS demo)
   bool _calibrationDismissed = false; // user pressed Skip or both checks passed
   double? _phoneAngle; // live phone tilt angle in degrees (0° = upright)
 
@@ -102,8 +109,9 @@ class _SessionPageState extends State<SessionPage> {
   int _perfectRepsCount = 0; // Track perfect reps for summary
   final List<AssessmentExerciseResult> _assessmentResults = [];
 
-  int get _remainingSecs =>
-      (_assessmentDurationSecs - _timePassed).ceil().clamp(0, _assessmentDurationSecs);
+  int get _remainingSecs => (_assessmentDurationSecs - _timePassed)
+      .ceil()
+      .clamp(0, _assessmentDurationSecs);
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -120,6 +128,7 @@ class _SessionPageState extends State<SessionPage> {
     _eventSub?.cancel();
     _ticker?.cancel();
     _countdownTimer?.cancel();
+    unawaited(_disposeNativeSession());
     super.dispose();
   }
 
@@ -143,26 +152,73 @@ class _SessionPageState extends State<SessionPage> {
 
   Future<void> _startSession() async {
     try {
+      await _ensurePreviousNativeSessionStopped();
+      if (!mounted) return;
       await SmKit.startSession(
         viewId: _cameraViewId,
         settings: SessionSettings(
-          phonePosition: 'Floor',
+          phonePositionType: widget.useElevatedMode
+              ? SmKitPhonePosition.elevated
+              : SmKitPhonePosition.floor,
           include3D: false,
           enableBodyCalibration: true,
           enablePhoneCalibration: true,
         ),
       );
+      _nativeSessionStarted = true;
+      _maybeStartPendingDetection();
     } catch (e) {
       if (mounted) _showError('$e');
     }
   }
 
-  Future<void> _startDetection() async {
+  Future<void> _ensurePreviousNativeSessionStopped() async {
     try {
-      final result = await SmKit.startDetection(exercise: _currentExercise);
+      await SmKit.stopDetection();
+    } catch (_) {
+      // No active detection is the normal case when this page opens cleanly.
+    }
+    try {
+      await SmKit.stopSession();
+      await Future<void>.delayed(const Duration(milliseconds: 750));
+    } catch (_) {
+      // No active native session is the normal case when this page opens cleanly.
+    }
+  }
+
+  Future<void> _disposeNativeSession() async {
+    if (!_nativeSessionStarted && !_isDetecting) return;
+    try {
+      if (_isDetecting) await SmKit.stopDetection();
+    } catch (_) {
+      // Best-effort cleanup during route disposal.
+    }
+    try {
+      await SmKit.stopSession();
+      _nativeSessionStarted = false;
+      _isDetecting = false;
+    } catch (_) {
+      // Best-effort cleanup during route disposal.
+    }
+  }
+
+  Future<void> _startDetection() async {
+    if (_isStartingDetection || _isDetecting) return;
+    if (!_nativeSessionStarted || !_sessionReady) {
+      _detectionStartRequested = true;
+      return;
+    }
+    _isStartingDetection = true;
+    try {
+      final result = await SmKit.startDetection(
+        exercise: _currentExercise,
+      );
       if (mounted) {
+        final romRange = result?.range;
         setState(() {
+          _detectionStartRequested = false;
           _isDetecting = true;
+          _isStartingDetection = false;
           // Use the exercise type returned by the SDK to determine dynamic vs static.
           _isDynamic = result?.exerciseType == SMBaseExerciseType.dynamic_;
           _reps = 0;
@@ -178,20 +234,55 @@ class _SessionPageState extends State<SessionPage> {
           _greenZoneFeedbackSet = {};
           _perfectRepsCount = 0;
           _currentRomValue = 0.0;
-          if (result?.minRom != null && result?.maxRom != null) {
-            _romRangeMin = result!.minRom;
-            _romRangeMax = result.maxRom;
+          if (romRange != null) {
+            _romRangeMin = romRange.min;
+            _romRangeMax = romRange.max;
           } else {
             _romRangeMin = null;
             _romRangeMax = null;
           }
         });
         _startTimer();
-
       }
     } catch (e) {
-      if (mounted) _showError('$e');
+      _isStartingDetection = false;
+      _detectionStartRequested = true;
+      if (_isNativeSessionNotReadyError(e)) {
+        _retryPendingDetectionStart();
+      } else if (mounted) {
+        _showError('$e');
+      }
     }
+  }
+
+  void _requestDetectionStart() {
+    _detectionStartRequested = true;
+    _maybeStartPendingDetection();
+  }
+
+  void _maybeStartPendingDetection() {
+    if (!_detectionStartRequested ||
+        _isClosing ||
+        _isDetecting ||
+        _isStartingDetection ||
+        !_nativeSessionStarted ||
+        !_sessionReady) {
+      return;
+    }
+    unawaited(_startDetection());
+  }
+
+  void _retryPendingDetectionStart() {
+    Future<void>.delayed(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      _maybeStartPendingDetection();
+    });
+  }
+
+  bool _isNativeSessionNotReadyError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('no native session is running') ||
+        message.contains('start a session before starting detection');
   }
 
   /// Finishes the current exercise, saves assessment result, and advances.
@@ -204,16 +295,17 @@ class _SessionPageState extends State<SessionPage> {
       final scoresToUse = _greenZoneTechniqueScores.isEmpty
           ? _techniqueScores
           : _greenZoneTechniqueScores;
-      final feedbacksToShow = _feedbackSet.toList();
+      final feedbacksToUse = _greenZoneTechniqueScores.isEmpty
+          ? _feedbackSet
+          : _greenZoneFeedbackSet;
       final avgScore = scoresToUse.isEmpty
           ? 0.0
           : scoresToUse.reduce((a, b) => a + b) / scoresToUse.length;
-      final peakRom =
-          _romValues.isEmpty ? null : _romValues.reduce(math.max);
+      final peakRom = _romValues.isEmpty ? null : _romValues.reduce(math.max);
       _assessmentResults.add(AssessmentExerciseResult(
         name: _currentExercise,
         techniqueScore: avgScore * 100,
-        feedbacks: feedbacksToShow,
+        feedbacks: feedbacksToUse.toList(),
         timeInPosition: _timeInPosition,
         peakRom: peakRom,
         reps: _isDynamic ? _reps : null,
@@ -230,6 +322,8 @@ class _SessionPageState extends State<SessionPage> {
       if (!mounted) return;
       setState(() {
         _isDetecting = false;
+        _isStartingDetection = false;
+        _detectionStartRequested = false;
         _isDynamic = false;
         _reps = 0;
         _perfectRepsCount = 0;
@@ -252,7 +346,7 @@ class _SessionPageState extends State<SessionPage> {
       } else {
         setState(() => _exerciseIndex++);
         // Calibration temporarily disabled — start next exercise directly.
-        await _startDetection();
+        _requestDetectionStart();
       }
     } catch (e) {
       if (mounted) _showError('$e');
@@ -260,14 +354,23 @@ class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _quit() async {
+    if (_isClosing) return;
+    _isClosing = true;
     _stopTimer();
     _countdownTimer?.cancel();
     _countdownTimer = null;
     try {
+      if (_isDetecting) {
+        await SmKit.stopDetection();
+        _isDetecting = false;
+      }
+      _isStartingDetection = false;
+      _detectionStartRequested = false;
       final result = await SmKit.stopSession();
+      _nativeSessionStarted = false;
       if (!mounted) return;
       // Allow native side to release camera before navigating away
-      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await Future<void>.delayed(const Duration(milliseconds: 650));
       if (!mounted) return;
 
       if (widget.isAssessment) {
@@ -294,12 +397,13 @@ class _SessionPageState extends State<SessionPage> {
   void _skipCalibration() {
     setState(() {
       _calibrationDismissed = true;
-      _boundingBox = null; // dismiss bounding box guide (mirrors iOS beginAssessment removing it)
+      _boundingBox =
+          null; // dismiss bounding box guide (mirrors iOS beginAssessment removing it)
     });
     if (widget.isAssessment) {
       _startCountdown();
     } else {
-      _startDetection();
+      _requestDetectionStart();
     }
   }
 
@@ -319,7 +423,7 @@ class _SessionPageState extends State<SessionPage> {
         _countdownTimer = null;
         setState(() => _isCountdown = false);
 
-        _startDetection();
+        _requestDetectionStart();
       }
     });
   }
@@ -375,6 +479,18 @@ class _SessionPageState extends State<SessionPage> {
     "Lower your hips a bit further down.", // SquatRegularOverheadStatic
   };
 
+  bool _assessmentInPosition({
+    required bool rawInPosition,
+    required double? rom,
+  }) {
+    if (rawInPosition) return true;
+    if (_currentExercise != 'SquatRegularOverheadStatic') return false;
+    if (rom == null || _romRangeMin == null || _romRangeMax == null) {
+      return false;
+    }
+    return rom >= _romRangeMin! && rom <= _romRangeMax!;
+  }
+
   void _onEvent(SmKitSessionEvent event) {
     if (!mounted) return;
     switch (event.type) {
@@ -384,27 +500,33 @@ class _SessionPageState extends State<SessionPage> {
         // Both regular and assessment modes now show calibration first; detection starts
         // from _skipCalibration() once both phone + body checks pass.
         if (_calibrationDismissed) {
-          _startDetection();
+          _requestDetectionStart();
         }
         break;
       case SmKitSessionEventType.detectionData:
         final d = event.detectionData;
         if (d == null || _isPaused) return;
         setState(() {
-          _inPosition = d.isInPosition;
+          final isInPosition = widget.isAssessment
+              ? _assessmentInPosition(
+                  rawInPosition: d.isInPosition,
+                  rom: d.currentRomValue,
+                )
+              : d.isInPosition;
+          _inPosition = isInPosition;
 
           // Filter ROM-depth feedbacks if already in target ROM (mirrors AssessmentViewModel.swift)
           final isRomInRange = _romRangeMin != null &&
               _romRangeMax != null &&
-              _currentRomValue >= _romRangeMin! &&
-              _currentRomValue <= _romRangeMax!;
+              d.currentRomValue >= _romRangeMin! &&
+              d.currentRomValue <= _romRangeMax!;
           // Green zone for this frame: ROM in target range (use current frame ROM)
           final inGreenZone = _romRangeMin != null &&
               _romRangeMax != null &&
               d.currentRomValue >= _romRangeMin! &&
               d.currentRomValue <= _romRangeMax!;
 
-          if (d.isInPosition) {
+          if (isInPosition) {
             _feedbacks = isRomInRange
                 ? d.feedback
                     .where((f) => !_romDepthFeedbacks.contains(f))
@@ -428,13 +550,13 @@ class _SessionPageState extends State<SessionPage> {
           _currentRomValue = d.currentRomValue;
           if (widget.isAssessment) {
             // Technique scores: only when in position (mirrors iOS: if isInPosition)
-            if (d.isInPosition || (_isDynamic && d.didFinishMovement)) {
+            if (isInPosition || (_isDynamic && d.didFinishMovement)) {
               if (d.techniqueScore > 0) _techniqueScores.add(d.techniqueScore);
             }
             // ROM values: always (mirrors iOS: if let r = rom { currentRomValues.append(r) })
             if (d.currentRomValue > 0) _romValues.add(d.currentRomValue);
             // Feedbacks: only when in position (mirrors iOS: if isInPosition { currentFeedbacks.insert })
-            if (d.isInPosition || (_isDynamic && d.didFinishMovement)) {
+            if (isInPosition || (_isDynamic && d.didFinishMovement)) {
               if (d.feedback.isNotEmpty) {
                 final filtered = isRomInRange
                     ? d.feedback.where((f) => !_romDepthFeedbacks.contains(f))
@@ -443,7 +565,8 @@ class _SessionPageState extends State<SessionPage> {
                   _feedbackSet.add(f);
                 }
               }
-              if (d.isShallowRep) _feedbackSet.add("Maintain full range of motion");
+              if (d.isShallowRep)
+                _feedbackSet.add("Maintain full range of motion");
             }
             // Green zone: collect regardless of isInPosition (mirrors iOS exactly)
             if (inGreenZone && d.techniqueScore > 0) {
@@ -531,244 +654,266 @@ class _SessionPageState extends State<SessionPage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-          // Left side control panel (hidden during calibration overlay)
-          if (!_showCalibration)
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 50, // Slightly restricted width
-              child: SafeArea(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (!widget.isAssessment)
-                        _SidePanelButton(
-                          icon: Icons.navigate_next,
-                          onPressed: _isDetecting ? _finishCurrentExercise : null,
-                        ),
-                      _SidePanelButton(
-                        icon: _isPaused ? Icons.play_arrow : Icons.pause,
-                        onPressed: _isDetecting ? _togglePause : null,
-                      ),
-                      _SidePanelButton(
-                        icon: Icons.stop,
-                        onPressed: _quit,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          // Main content column (hidden during calibration overlay)
-          if (!_showCalibration)
-            Positioned.fill(
-              child: SafeArea(
+        // Left side control panel (hidden during calibration overlay)
+        if (!_showCalibration)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 50, // Slightly restricted width
+            child: SafeArea(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.5),
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Header
-                    Container(
-                      width: double.infinity,
-                      color: Colors.black.withValues(alpha: 0.6),
-                      padding: const EdgeInsets.fromLTRB(56, 12, 16, 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _currentExercise,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 34,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          if (widget.isAssessment)
-                            Text(
-                              '${_exerciseIndex + 1} / ${widget.exercises.length}',
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 18),
-                            ),
-                        ],
+                    if (!widget.isAssessment)
+                      _SidePanelButton(
+                        icon: Icons.navigate_next,
+                        onPressed: _isDetecting ? _finishCurrentExercise : null,
                       ),
+                    _SidePanelButton(
+                      icon: _isPaused ? Icons.play_arrow : Icons.pause,
+                      onPressed: _isDetecting ? _togglePause : null,
                     ),
-
-                    // Middle: Gauge and Indicator (Flexible & Scrollable if needed)
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(horizontal: 56, vertical: 20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_romRangeMin != null && _romRangeMax != null) ...[
-                              RomGauge(
-                                value: _currentRomValue.clamp(0.0, 1.0),
-                                rangeMin: _romRangeMin!,
-                                rangeMax: _romRangeMax!,
-                                isInPosition: _inPosition,
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                _inPosition ? 'In Position' : 'Get in position',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: _inPosition ? Colors.green : Colors.white,
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 32),
-                            ExerciseIndicator(
-                              reps: _reps,
-                              isDynamic: _isDynamic,
-                              inPosition: _inPosition,
-                              lastRepWasGood: _lastRepWasGood,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Bottom: Timer and Progress
-                    Container(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            widget.isAssessment
-                                ? (_timePassed <= 0 ? "15.0" : (_assessmentDurationSecs - _timePassed).toStringAsFixed(1))
-                                : _formattedTime,
-                            style: TextStyle(
-                              color: widget.isAssessment && _remainingSecs <= 5
-                                  ? Colors.orange
-                                  : Colors.white,
-                              fontSize: 72,
-                              fontWeight: FontWeight.bold,
-                              fontFeatures: const [FontFeature.tabularFigures()],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (widget.isAssessment)
-                            Container(
-                              height: 6,
-                              width: double.infinity,
-                              color: Colors.white.withValues(alpha: 0.2),
-                              child: FractionallySizedBox(
-                                alignment: Alignment.centerLeft,
-                                widthFactor: ((_assessmentDurationSecs - _timePassed) / _assessmentDurationSecs).clamp(0.0, 1.0),
-                                child: Container(
-                                  color: _remainingSecs > 10
-                                      ? Colors.green
-                                      : _remainingSecs > 5
-                                          ? Colors.orange
-                                          : Colors.red,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                    _SidePanelButton(
+                      icon: Icons.stop,
+                      onPressed: _quit,
                     ),
                   ],
                 ),
               ),
             ),
+          ),
 
-          // Real-time feedbacks overlay (Floating above bottom)
-          if (!_showCalibration && _feedbacks.isNotEmpty)
-            Positioned(
-              left: 56,
-              right: 16,
-              bottom: widget.isAssessment ? 100 : 80, // Offset to not cover timer/progress
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _feedbacks.map((f) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
+        // Main content column (hidden during calibration overlay)
+        if (!_showCalibration)
+          Positioned.fill(
+            child: SafeArea(
+              child: Column(
+                children: [
+                  // Header
+                  Container(
+                    width: double.infinity,
+                    color: Colors.black.withValues(alpha: 0.6),
+                    padding: const EdgeInsets.fromLTRB(56, 12, 16, 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
-                        const SizedBox(width: 6),
-                        Expanded(child: Text(f, style: const TextStyle(color: Colors.white, fontSize: 16))),
+                        Text(
+                          _currentExercise,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 34,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (widget.isAssessment)
+                          Text(
+                            '${_exerciseIndex + 1} / ${widget.exercises.length}',
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 18),
+                          ),
                       ],
                     ),
-                  )).toList(),
-                ),
+                  ),
+
+                  // Middle: Gauge and Indicator (Flexible & Scrollable if needed)
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 56, vertical: 20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_romRangeMin != null && _romRangeMax != null) ...[
+                            Column(
+                              children: [
+                                RomGauge(
+                                  value: _currentRomValue.clamp(0.0, 1.0),
+                                  rangeMin: _romRangeMin!,
+                                  rangeMax: _romRangeMax!,
+                                  isInPosition: _inPosition,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  _inPosition
+                                      ? 'In Position'
+                                      : 'Get in position',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: _inPosition
+                                        ? Colors.green
+                                        : Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 32),
+                          ExerciseIndicator(
+                            reps: _reps,
+                            isDynamic: _isDynamic,
+                            inPosition: _inPosition,
+                            lastRepWasGood: _lastRepWasGood,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Bottom: Timer and Progress
+                  Container(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.isAssessment
+                              ? (_timePassed <= 0
+                                  ? "15.0"
+                                  : (_assessmentDurationSecs - _timePassed)
+                                      .toStringAsFixed(1))
+                              : _formattedTime,
+                          style: TextStyle(
+                            color: widget.isAssessment && _remainingSecs <= 5
+                                ? Colors.orange
+                                : Colors.white,
+                            fontSize: 72,
+                            fontWeight: FontWeight.bold,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (widget.isAssessment)
+                          Container(
+                            height: 6,
+                            width: double.infinity,
+                            color: Colors.white.withValues(alpha: 0.2),
+                            child: FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor:
+                                  ((_assessmentDurationSecs - _timePassed) /
+                                          _assessmentDurationSecs)
+                                      .clamp(0.0, 1.0),
+                              child: Container(
+                                color: _remainingSecs > 10
+                                    ? Colors.green
+                                    : _remainingSecs > 5
+                                        ? Colors.orange
+                                        : Colors.red,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
+          ),
 
-
-          // Loading overlay (before camera is ready)
-          if (!_sessionReady)
-            Container(
-              color: Colors.black.withValues(alpha: 0.6),
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.white),
+        // Real-time feedbacks overlay (Floating above bottom)
+        if (!_showCalibration && _feedbacks.isNotEmpty)
+          Positioned(
+            left: 56,
+            right: 16,
+            bottom: widget.isAssessment
+                ? 100
+                : 80, // Offset to not cover timer/progress
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: _feedbacks
+                    .map((f) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.warning_amber_rounded,
+                                  color: Colors.orange, size: 18),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                  child: Text(f,
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 16))),
+                            ],
+                          ),
+                        ))
+                    .toList(),
               ),
             ),
+          ),
 
-          // Skeleton overlay
-          if (widget.showSkeleton && !_showCalibration)
-            Positioned.fill(
-              key: const ValueKey('skeleton'),
-              child: IgnorePointer(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final overlaySize =
-                        Size(constraints.maxWidth, constraints.maxHeight);
-                    return _SkeletonOverlay(size: overlaySize);
-                  },
-                ),
+        // Loading overlay (before camera is ready)
+        if (!_sessionReady)
+          Container(
+            color: Colors.black.withValues(alpha: 0.6),
+            child: const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          ),
+
+        // Skeleton overlay
+        if (widget.showSkeleton && !_showCalibration)
+          Positioned.fill(
+            key: const ValueKey('skeleton'),
+            child: IgnorePointer(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final overlaySize =
+                      Size(constraints.maxWidth, constraints.maxHeight);
+                  return _SkeletonOverlay(size: overlaySize);
+                },
               ),
             ),
+          ),
 
-          // Dark fallback background for calibration when bounding box not yet received
-          if (_showCalibration && _boundingBox == null)
-            Container(color: Colors.black.withValues(alpha: 0.7)),
+        // Dark fallback background for calibration when bounding box not yet received
+        if (_showCalibration && _boundingBox == null)
+          Container(color: Colors.black.withValues(alpha: 0.7)),
 
-          // Bounding box guide — shown during calibration; provides dark surround + camera cutout
-          if (_showCalibration && _boundingBox != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: _BoundingBoxGuide(
-                  box: _boundingBox!,
-                  isInPosition: _isBodyInFrame,
-                ),
+        // Bounding box guide — shown during calibration; provides dark surround + camera cutout
+        if (_showCalibration && _boundingBox != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: _BoundingBoxGuide(
+                box: _boundingBox!,
+                isInPosition: _isBodyInFrame,
               ),
             ),
+          ),
 
-          // Calibration overlay — shown in assessment before each exercise starts (no background — bounding box guide provides the dark overlay)
-          if (_showCalibration)
-            _CalibrationOverlay(
-              isPhoneReady: _isPhoneReady,
-              isBodyInFrame: _isBodyInFrame,
-              isTooClose: _isTooClose,
-              exerciseIndex: _exerciseIndex,
-              totalExercises: widget.exercises.length,
-              exerciseName: _currentExercise,
-              onStop: _quit,
-              onSkip: _skipCalibration,
-              showPhoneCalibration: true,
-              phoneAngle: _phoneAngle,
-            ),
+        // Calibration overlay — shown in assessment before each exercise starts (no background — bounding box guide provides the dark overlay)
+        if (_showCalibration)
+          _CalibrationOverlay(
+            isPhoneReady: _isPhoneReady,
+            isBodyInFrame: _isBodyInFrame,
+            isTooClose: _isTooClose,
+            exerciseIndex: _exerciseIndex,
+            totalExercises: widget.exercises.length,
+            exerciseName: _currentExercise,
+            onStop: _quit,
+            onSkip: _skipCalibration,
+            showPhoneCalibration: true,
+            phoneAngle: _phoneAngle,
+          ),
 
-          // 3-2-1 countdown overlay (assessment only)
-          if (widget.isAssessment && _isCountdown)
-            _CountdownOverlay(
-              exerciseName: _currentExercise,
-              countdownValue: _countdownValue,
-              onStop: _quit,
-            ),
+        // 3-2-1 countdown overlay (assessment only)
+        if (widget.isAssessment && _isCountdown)
+          _CountdownOverlay(
+            exerciseName: _currentExercise,
+            countdownValue: _countdownValue,
+            onStop: _quit,
+          ),
       ],
     );
   }
@@ -923,100 +1068,102 @@ class _CalibrationOverlay extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             // Top bar
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(
+                    'Exercise ${exerciseIndex + 1} / $totalExercises',
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: onStop,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // Calibration card
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(
-                      'Exercise ${exerciseIndex + 1} / $totalExercises',
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  const Text(
+                    'Calibration',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: onStop,
+                  const SizedBox(height: 8),
+                  Text(
+                    exerciseName,
+                    style: const TextStyle(color: Colors.white70, fontSize: 16),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        if (showPhoneCalibration) ...[
+                          _CalibrationRow(
+                            icon: Icons.phone_iphone,
+                            label: phoneAngle != null
+                                ? 'Phone angle: ${phoneAngle!.toStringAsFixed(0)}°'
+                                : 'Phone angle',
+                            isReady: isPhoneReady,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        _CalibrationRow(
+                          icon: Icons.accessibility_new,
+                          label: 'Body in frame',
+                          isReady: isBodyInFrame && !isTooClose,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    _statusMessage,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  TextButton(
+                    onPressed: onSkip,
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text(
+                      'Skip Calibration',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
                   ),
                 ],
               ),
-
-              const SizedBox(height: 20),
-
-              // Calibration card
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Calibration',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      exerciseName,
-                      style: const TextStyle(color: Colors.white70, fontSize: 16),
-                    ),
-                    const SizedBox(height: 24),
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        children: [
-                          if (showPhoneCalibration) ...[
-                            _CalibrationRow(
-                              icon: Icons.phone_iphone,
-                              label: phoneAngle != null
-                                  ? 'Phone angle: ${phoneAngle!.toStringAsFixed(0)}°'
-                                  : 'Phone angle',
-                              isReady: isPhoneReady,
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          _CalibrationRow(
-                            icon: Icons.accessibility_new,
-                            label: 'Body in frame',
-                            isReady: isBodyInFrame && !isTooClose,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      _statusMessage,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    TextButton(
-                      onPressed: onSkip,
-                      style: TextButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: const Text(
-                        'Skip Calibration',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
+            ),
+            const SizedBox(height: 20),
+          ],
         ),
+      ),
     );
   }
 }
@@ -1149,13 +1296,15 @@ class _BoundingBoxGuide extends StatelessWidget {
     final guideRect = _toScreenRect(size);
     return CustomPaint(
       size: size,
-      painter: _BoundingBoxPainter(guideRect: guideRect, isInPosition: isInPosition),
+      painter:
+          _BoundingBoxPainter(guideRect: guideRect, isInPosition: isInPosition),
     );
   }
 }
 
 class _BoundingBoxPainter extends CustomPainter {
-  const _BoundingBoxPainter({required this.guideRect, required this.isInPosition});
+  const _BoundingBoxPainter(
+      {required this.guideRect, required this.isInPosition});
 
   final Rect guideRect;
   final bool isInPosition;
@@ -1165,7 +1314,8 @@ class _BoundingBoxPainter extends CustomPainter {
     final rrect = RRect.fromRectAndRadius(guideRect, const Radius.circular(12));
 
     // Dark surround with clear cutout
-    final overlayPaint = Paint()..color = const Color(0x80000000); // black 0.5 alpha
+    final overlayPaint = Paint()
+      ..color = const Color(0x80000000); // black 0.5 alpha
     final fullRect = Offset.zero & size;
     final path = ui.Path()
       ..addRect(fullRect)

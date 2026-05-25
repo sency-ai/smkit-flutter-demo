@@ -21,29 +21,56 @@ class SummaryPage extends StatelessWidget {
       'endDate': result!.endDate,
       'totalTime': result!.totalTime,
       'totalScore': result!.totalScore,
-      'exercises': result!.exercises.map((e) => {
-        'exerciseName': e.exerciseName,
-        'type': e.type,
-        'sessionId': e.sessionId,
-        'startTime': e.startTime,
-        'endTime': e.endTime,
-        'totalTime': e.totalTime,
-        'techniqueScore': e.techniqueScore,
-        'feedbacks': e.feedbacks,
-        if (e.numberOfPerformedReps != null)
-          'numberOfPerformedReps': e.numberOfPerformedReps,
-        if (e.perfectReps != null) 'perfectReps': e.perfectReps,
-        if (e.timeInPosition != null) 'timeInPosition': e.timeInPosition,
-        if (e.peakRangeOfMotionScore != null)
-          'peakRangeOfMotionScore': e.peakRangeOfMotionScore,
-        if (e.performedReps != null)
-          'performedReps': e.performedReps!.map((r) => {
-            'isGood': r.isGood,
-            'isShallowRep': r.isShallowRep,
-            'romScore': r.romScore,
-            'techniqueScore': r.techniqueScore,
-          }).toList(),
-      }).toList(),
+      'exercises': result!.exercises
+          .map((e) => {
+                'exerciseName': e.exerciseName,
+                'type': e.type,
+                'sessionId': e.sessionId,
+                'startTime': e.startTime,
+                'endTime': e.endTime,
+                'totalTime': e.totalTime,
+                'techniqueScore': e.techniqueScore,
+                'feedbacks': e.feedbacks,
+                if (e.repsTechniqueScore != null)
+                  'repsTechniqueScore': e.repsTechniqueScore,
+                if (e.romRange != null)
+                  'romRange': {'min': e.romRange!.min, 'max': e.romRange!.max},
+                if (e.numberOfPerformedReps != null)
+                  'numberOfPerformedReps': e.numberOfPerformedReps,
+                if (e.perfectReps != null) 'perfectReps': e.perfectReps,
+                if (e.timeInPosition != null)
+                  'timeInPosition': e.timeInPosition,
+                if (e.timeInPositionPerfect != null)
+                  'timeInPositionPerfect': e.timeInPositionPerfect,
+                if (e.peakRangeOfMotionScore != null)
+                  'peakRangeOfMotionScore': e.peakRangeOfMotionScore,
+                if (e.performedReps != null)
+                  'performedReps': e.performedReps!
+                      .map((r) => {
+                            'isGood': r.isGood,
+                            'isShallowRep': r.isShallowRep,
+                            'detectionConfidenceScore':
+                                r.detectionConfidenceScore,
+                            'romScore': r.romScore,
+                            'techniqueScore': r.techniqueScore,
+                            if (r.feedback != null) 'feedback': r.feedback,
+                          })
+                      .toList(),
+                if (e.inPositionData != null)
+                  'inPositionData': e.inPositionData!
+                      .map((s) => {
+                            'inPosition': s.inPosition,
+                            'inGreenZone': s.inGreenZone,
+                            'isGood': s.isGood,
+                            'detectionConfidenceScore':
+                                s.detectionConfidenceScore,
+                            'rangeOfMotionScore': s.rangeOfMotionScore,
+                            'techniqueScore': s.techniqueScore,
+                            if (s.feedback != null) 'feedback': s.feedback,
+                          })
+                      .toList(),
+              })
+          .toList(),
     };
     const encoder = JsonEncoder.withIndent('  ');
     return encoder.convert(map);
@@ -102,7 +129,8 @@ class SummaryPage extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Text(
                 json,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
               ),
             ),
           ),

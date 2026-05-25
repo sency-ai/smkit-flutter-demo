@@ -27,8 +27,10 @@ String? _resolveKey(Map<String, dynamic> data, String name) {
   if (data.containsKey(name)) return name;
   final lower = name.toLowerCase();
   if (data.containsKey(lower)) return lower;
-  if (name == 'RShoulder' && data.containsKey('right_shoulder')) return 'right_shoulder';
-  if (name == 'LShoulder' && data.containsKey('left_shoulder')) return 'left_shoulder';
+  if (name == 'RShoulder' && data.containsKey('right_shoulder'))
+    return 'right_shoulder';
+  if (name == 'LShoulder' && data.containsKey('left_shoulder'))
+    return 'left_shoulder';
   if (name == 'RElbow' && data.containsKey('right_elbow')) return 'right_elbow';
   if (name == 'LElbow' && data.containsKey('left_elbow')) return 'left_elbow';
   if (name == 'RWrist' && data.containsKey('right_wrist')) return 'right_wrist';
@@ -48,7 +50,7 @@ String? _resolveKey(Map<String, dynamic> data, String name) {
 
 /// Draws 2D pose joints and limb connections over the camera preview.
 /// Design matches the iOS demo default: black dots with white stroke, white connection lines.
-/// [positionData] maps joint name → { 'x': double, 'y': double } normalized 0–1.
+/// [positionData] maps joint name → { 'x': double, 'y': double } normalized 0-1.
 class SkeletonPainter extends CustomPainter {
   const SkeletonPainter({
     required this.positionData,
@@ -59,6 +61,7 @@ class SkeletonPainter extends CustomPainter {
 
   final Map<String, dynamic> positionData;
   final Size size;
+
   /// When non-null (Android), apply aspect-fill transform matching PreviewView.
   /// When null (iOS), coordinates are already in compatible aspect space.
   final double? frameAspect;
@@ -86,34 +89,60 @@ class SkeletonPainter extends CustomPainter {
     return Offset(nx * size.width, ny * size.height);
   }
 
-  Offset? _offsetFromRaw(dynamic raw) {
+  bool _hasFalseValidityFlag(Map raw) {
+    for (final key in const ['isValid', 'valid', 'visible', 'isVisible']) {
+      if (raw[key] == false) return true;
+    }
+    return false;
+  }
+
+  bool _hasZeroQualityScore(Map raw) {
+    for (final key in const ['confidence', 'score', 'visibility']) {
+      final value = raw[key];
+      if (value is num && value <= 0) return true;
+    }
+    return false;
+  }
+
+  bool _isNormalizedCoordinate(double value) {
+    return value.isFinite && value >= 0 && value <= 1;
+  }
+
+  ({double x, double y})? _normalizedPointFromRaw(dynamic raw) {
     if (raw is Map) {
+      if (_hasFalseValidityFlag(raw) || _hasZeroQualityScore(raw)) {
+        return null;
+      }
       final x = (raw['x'] as num?)?.toDouble();
       final y = (raw['y'] as num?)?.toDouble();
-      if (x != null && y != null) return _toScreen(x, y);
+      if (x != null &&
+          y != null &&
+          _isNormalizedCoordinate(x) &&
+          _isNormalizedCoordinate(y)) {
+        return (x: x, y: y);
+      }
     } else if (raw is List && raw.length >= 2) {
       final x = (raw[0] as num?)?.toDouble();
       final y = (raw[1] as num?)?.toDouble();
-      if (x != null && y != null) return _toScreen(x, y);
+      if (x != null &&
+          y != null &&
+          _isNormalizedCoordinate(x) &&
+          _isNormalizedCoordinate(y)) {
+        return (x: x, y: y);
+      }
     }
     return null;
+  }
+
+  Offset? _offsetFromRaw(dynamic raw) {
+    final point = _normalizedPointFromRaw(raw);
+    return point == null ? null : _toScreen(point.x, point.y);
   }
 
   Offset? _joint(String name) {
     final key = _resolveKey(positionData, name);
     if (key == null) return null;
-    final raw = positionData[key];
-    double? x;
-    double? y;
-    if (raw is Map) {
-      x = (raw['x'] as num?)?.toDouble();
-      y = (raw['y'] as num?)?.toDouble();
-    } else if (raw is List && raw.length >= 2) {
-      x = (raw[0] as num?)?.toDouble();
-      y = (raw[1] as num?)?.toDouble();
-    }
-    if (x == null || y == null) return null;
-    return _toScreen(x, y);
+    return _offsetFromRaw(positionData[key]);
   }
 
   @override
@@ -164,7 +193,9 @@ class SkeletonPainter extends CustomPainter {
     }
 
     if (showDebugLabel) {
-      final count = positionData.entries.where((e) => _offsetFromRaw(e.value) != null).length;
+      final count = positionData.entries
+          .where((e) => _offsetFromRaw(e.value) != null)
+          .length;
       final textPainter = TextPainter(
         text: TextSpan(
           text: count > 0 ? 'Pose: $count joints' : 'Waiting for pose...',
