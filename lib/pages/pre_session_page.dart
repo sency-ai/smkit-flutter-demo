@@ -19,7 +19,9 @@ const List<String> _demoExercises = [
 /// Exercise selection screen — mirrors Pre2DExerciseView from the iOS demo.
 /// User taps exercises to toggle selection, then taps START.
 class PreSessionPage extends StatefulWidget {
-  const PreSessionPage({super.key});
+  const PreSessionPage({super.key, required this.useElevatedMode});
+
+  final bool useElevatedMode;
 
   @override
   State<PreSessionPage> createState() => _PreSessionPageState();
@@ -49,6 +51,7 @@ class _PreSessionPageState extends State<PreSessionPage> {
           exercises: ordered,
           showSkeleton: _showSkeleton,
           isAssessment: false,
+          useElevatedMode: widget.useElevatedMode,
         ),
       ),
     );
@@ -79,7 +82,8 @@ class _PreSessionPageState extends State<PreSessionPage> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 14),
                         decoration: BoxDecoration(
-                          color: isSelected ? Colors.green : Colors.grey.shade100,
+                          color:
+                              isSelected ? Colors.green : Colors.grey.shade100,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: isSelected

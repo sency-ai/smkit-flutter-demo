@@ -1,8 +1,9 @@
-# flutter_smkit 1.0.5 and SMKit 1.8.3 require iOS 17.2.
+# flutter_smkit 1.0.6 and SMKit 1.9.1 require iOS 17.2.
 platform :ios, '17.2'
 
-# SMKit and SMBase from CocoaPods spec repo — SPM is not released.
+# SMKit 1.9.1 and SMBase from CocoaPods spec repo — SPM is not released.
 source 'https://bitbucket.org/sencyai/ios_sdks_release.git'
+source 'https://cdn.cocoapods.org/'
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
@@ -32,10 +33,23 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 
 flutter_ios_podfile_setup
 
+# CocoaPods may not write Local Podspecs/flutter_smkit.podspec.json for the Flutter plugin
+# path pod, which causes generate_checksums to fail when writing the lockfile. Create it.
+pre_install do |installer|
+  ios_dir = File.dirname(File.realpath(__FILE__))
+  flutter_smkit_spec = File.join(ios_dir, '.symlinks', 'plugins', 'flutter_smkit', 'ios', 'flutter_smkit.podspec')
+  next unless File.exist?(flutter_smkit_spec)
+  local_podspecs = File.join(installer.sandbox.root, 'Local Podspecs')
+  FileUtils.mkdir_p(local_podspecs)
+  json_path = File.join(local_podspecs, 'flutter_smkit.podspec.json')
+  json_content = `pod ipc spec "#{flutter_smkit_spec}" 2>/dev/null`
+  File.write(json_path, json_content) if $?.success? && !json_content.empty?
+end
+
 target 'Runner' do
   use_frameworks!
 
-  pod 'SMKit', '1.8.3'
+  pod 'SMKit', '1.9.1'
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
@@ -70,6 +84,30 @@ post_install do |installer|
     patched = patched.gsub(
       /source="\$\(readlink -f "\$\{source\}"\)"/,
       %q{source="$(perl -MCwd -e 'print Cwd::realpath($ARGV[0])' "${source}")"}
+    )
+    patched = patched.gsub(
+      /  local destination="\$\{TARGET_BUILD_DIR\}\/\$\{FRAMEWORKS_FOLDER_PATH\}"/,
+      <<~'SH'.rstrip
+        if [ -z "${source+x}" ]; then
+          local framework_name
+          framework_name="$(basename "$1")"
+          local pod_name="${framework_name%.framework}"
+          local candidate
+          for candidate in "${PODS_ROOT}/${pod_name}/${pod_name}.xcframework"/ios-*-simulator/"${framework_name}" "${PODS_ROOT}/${pod_name}/${pod_name}.xcframework"/ios-arm64/"${framework_name}"; do
+            if [ -r "${candidate}" ]; then
+              source="${candidate}"
+              break
+            fi
+          done
+        fi
+
+        if [ -z "${source+x}" ]; then
+          echo "warning: framework '$1' was not found; skipping embed"
+          return
+        fi
+
+        local destination="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+      SH
     )
     File.write(frameworks_sh, patched) if patched != content
   end

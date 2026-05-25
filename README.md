@@ -2,27 +2,29 @@
 
 Demo Flutter app for [flutter_smkit](https://pub.dev/packages/flutter_smkit) — Sency's SMKit Flutter plugin.
 
-This demo targets `flutter_smkit` `^1.0.5`, iOS `SMKit` `1.8.3`, and Android `com.sency.smkit:smkit` `1.6.4`.
+This demo targets `flutter_smkit` `^1.0.6`, iOS `SMKit` `1.9.1`, and Android `com.sency.smkit:smkit` `1.6.5`.
 
 ## Flows
 
 **2D Session** — Select one or more exercises, enable/disable skeleton overlay, run them sequentially with real-time rep counting and feedback.
 
-**Demo Assessment** — Fixed set of 3 exercises (15 seconds each), body calibration, then a scored summary per exercise.
+**Demo Assessment** — Fixed assessment flow with body calibration, elevated/floor phone mode, and a scored summary per exercise.
 
 ## Setup
 
 ### Auth key
 
-Open `lib/main.dart` and set your auth key:
+Create a local `.env` file in the project root:
 
-```dart
-await SmKit.configure(authKey: 'YOUR_AUTH_KEY');
+```bash
+cp .env.example .env
 ```
+
+Then set `API_PUBLIC_KEY` in `.env`. The `.env` file is ignored by git and is bundled only into local builds.
 
 ### iOS
 
-The demo `ios/Podfile` pins **SMKit** `1.8.3` from the Sency CocoaPods specs repo. After changing SDK versions, run from `ios/`:
+The demo `ios/Podfile` pins **SMKit** `1.9.1` from the Sency CocoaPods specs repo. After changing SDK versions, run from `ios/`:
 
 ```bash
 pod install --repo-update
@@ -37,7 +39,7 @@ Add to `ios/Runner/Info.plist`:
 
 ### Android
 
-Add the SMKit Maven repository to `android/build.gradle` or use a local `../smkit_android/repo` with `com.sency.smkit:smkit:1.6.4`:
+Add the SMKit Maven repository to `android/build.gradle` or use a local `../smkit_android/repo` with `com.sency.smkit:smkit:1.6.5`:
 
 ```groovy
 allprojects {

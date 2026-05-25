@@ -1,19 +1,19 @@
 PODS:
   - Flutter (1.0.0)
-  - flutter_smkit (1.0.5):
+  - flutter_smkit (1.0.6):
     - Flutter
-    - SMKit (= 1.8.3)
+    - SMKit (= 1.9.1)
   - permission_handler_apple (9.3.0):
     - Flutter
-  - SMBase (1.8.3)
-  - SMKit (1.8.3):
-    - SMBase (= 1.8.3)
+  - SMBase (1.9.1)
+  - SMKit (1.9.1):
+    - SMBase (= 1.9.1)
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
   - flutter_smkit (from `.symlinks/plugins/flutter_smkit/ios`)
   - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
-  - SMKit (= 1.8.3)
+  - SMKit (= 1.9.1)
 
 SPEC REPOS:
   https://bitbucket.org/sencyai/ios_sdks_release.git:
@@ -30,11 +30,11 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_smkit: bdb3941394d5456096eec0c25635c25a42df2b9d
+  flutter_smkit: a56a43e9037ea0018ad25872a27d87dc2849af47
   permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
-  SMBase: fe041dcf0cf73135120f4f596faf1ac761baf40c
-  SMKit: 02e9784605a50ebc957b20af1cf00703707fa383
+  SMBase: 09655e22beb125aa4fe6af912ef97cd67e84a0a4
+  SMKit: 255495f14cbd3c169351639432fce2d55484ef8f
 
-PODFILE CHECKSUM: 9cbc35c7ba508a0b78aab1a12adec190d6a1919d
+PODFILE CHECKSUM: b00572208787451d5e271352b56ad6e7b04f8be2
 
 COCOAPODS: 1.16.2

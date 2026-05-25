@@ -167,7 +167,9 @@ const List<_Exercise> _allExercises = [
 // ── WorkoutBuilderPage ────────────────────────────────────────────────────────
 
 class WorkoutBuilderPage extends StatefulWidget {
-  const WorkoutBuilderPage({super.key});
+  const WorkoutBuilderPage({super.key, required this.useElevatedMode});
+
+  final bool useElevatedMode;
 
   @override
   State<WorkoutBuilderPage> createState() => _WorkoutBuilderPageState();
@@ -197,8 +199,10 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
 
   List<_Exercise> get _filtered {
     return _allExercises.where((e) {
-      final matchesCat = _filterCategory == null || e.category == _filterCategory;
-      final matchesQuery = _query.isEmpty || e.name.toLowerCase().contains(_query);
+      final matchesCat =
+          _filterCategory == null || e.category == _filterCategory;
+      final matchesQuery =
+          _query.isEmpty || e.name.toLowerCase().contains(_query);
       return matchesCat && matchesQuery;
     }).toList();
   }
@@ -221,6 +225,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           exercises: List<String>.from(_selected),
           showSkeleton: false,
           isAssessment: false,
+          useElevatedMode: widget.useElevatedMode,
         ),
       ),
     );
@@ -289,19 +294,22 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
                 _FilterChip(
                   label: 'Dynamic',
                   selected: _filterCategory == _Category.dynamic_,
-                  onTap: () => setState(() => _filterCategory = _Category.dynamic_),
+                  onTap: () =>
+                      setState(() => _filterCategory = _Category.dynamic_),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
                   label: 'Static',
                   selected: _filterCategory == _Category.static_,
-                  onTap: () => setState(() => _filterCategory = _Category.static_),
+                  onTap: () =>
+                      setState(() => _filterCategory = _Category.static_),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
                   label: 'Mobility',
                   selected: _filterCategory == _Category.mobility,
-                  onTap: () => setState(() => _filterCategory = _Category.mobility),
+                  onTap: () =>
+                      setState(() => _filterCategory = _Category.mobility),
                 ),
               ],
             ),
@@ -322,7 +330,8 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
                     itemBuilder: (context, index) {
                       final ex = filtered[index];
                       final isSelected = _selected.contains(ex.name);
-                      final selectionIndex = isSelected ? _selected.indexOf(ex.name) + 1 : null;
+                      final selectionIndex =
+                          isSelected ? _selected.indexOf(ex.name) + 1 : null;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: GestureDetector(
