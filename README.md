@@ -2,7 +2,7 @@
 
 Demo Flutter app for [flutter_smkit](https://pub.dev/packages/flutter_smkit) — Sency's SMKit Flutter plugin.
 
-This demo targets `flutter_smkit` `^1.0.6`, iOS `SMKit` `1.9.1`, and Android `com.sency.smkit:smkit` `1.6.5`.
+This demo targets `flutter_smkit` `^1.1.0`, iOS `SMKit` `2.0.3`, and Android `com.sency.smkit:smkit` `1.7.1`.
 
 ## Flows
 
@@ -24,7 +24,7 @@ Then set `API_PUBLIC_KEY` in `.env`. The `.env` file is ignored by git and is bu
 
 ### iOS
 
-The demo `ios/Podfile` pins **SMKit** `1.9.1` from the Sency CocoaPods specs repo. After changing SDK versions, run from `ios/`:
+The demo `ios/Podfile` pins **SMKit** `2.0.3` from the Sency CocoaPods specs repo. After changing SDK versions, run from `ios/`:
 
 ```bash
 pod install --repo-update
@@ -39,7 +39,7 @@ Add to `ios/Runner/Info.plist`:
 
 ### Android
 
-Add the SMKit Maven repository to `android/build.gradle` or use a local `../smkit_android/repo` with `com.sency.smkit:smkit:1.6.5`:
+Add the SMKit Maven repository to `android/build.gradle` or use a local `../smkit_android/repo` with `com.sency.smkit:smkit:1.7.1`:
 
 ```groovy
 allprojects {
