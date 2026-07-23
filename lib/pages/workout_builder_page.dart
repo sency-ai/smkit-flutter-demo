@@ -137,6 +137,8 @@ const List<_Exercise> _allExercises = [
   _Exercise('KneelingQuadStretchRight', _Category.mobility),
   _Exercise('LatStretchLeft', _Category.mobility),
   _Exercise('LatStretchRight', _Category.mobility),
+  _Exercise('LumbarRotationsSeatedArmsCrossedLeft', _Category.mobility),
+  _Exercise('LumbarRotationsSeatedArmsCrossedRight', _Category.mobility),
   _Exercise('LumbarRotationsSeatedLeft', _Category.mobility),
   _Exercise('LumbarRotationsSeatedRight', _Category.mobility),
   _Exercise('LungeSideStaticLeft', _Category.mobility),
