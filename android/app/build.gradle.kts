@@ -21,8 +21,8 @@ android {
 
     defaultConfig {
         applicationId = "com.sency.smkitdemo"
-        // SMKit Android SDK requires minSdk 26
-        minSdk = 26
+        // SMKit Android SDK supports Android 7.0 (API 24) and above.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

@@ -2,7 +2,9 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        // Sency Artifactory — smkit + smbase at 1.7.4.
+        // Locally built SMKit 1.8.0 artifacts from the adjacent Android SDK checkout.
+        maven { url = uri("../smkit_android/repo") }
+        // Published releases, used once the 1.8.0 artifacts are available there.
         maven { url = uri("https://artifacts.sency.ai/artifactory/release") }
     }
 }

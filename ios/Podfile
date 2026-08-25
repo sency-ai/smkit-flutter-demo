@@ -1,7 +1,7 @@
-# flutter_smkit 1.1.3 and SMKit 2.2.1 require iOS 16.0+.
+# flutter_smkit 1.1.6 and SMKit 2.3.6 require iOS 16.0+.
 platform :ios, '16.0'
 
-# SMKit 2.2.1 and SMBase from CocoaPods spec repo — SPM is not released.
+# SMKit 2.3.6 and SMBase from CocoaPods spec repo — SPM is not released.
 source 'https://bitbucket.org/sencyai/ios_sdks_release.git'
 source 'https://cdn.cocoapods.org/'
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
@@ -49,7 +49,7 @@ end
 target 'Runner' do
   use_frameworks!
 
-  pod 'SMKit', '2.2.1'
+  pod 'SMKit', '2.3.6'
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
