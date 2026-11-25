@@ -8,6 +8,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_smkit/smkit.dart';
 
 import '../models/assessment_exercise_result.dart';
+import '../models/feedback_display.dart';
+import '../models/smkit_error_text.dart';
 import '../widgets/exercise_indicator.dart';
 import '../widgets/rom_gauge.dart';
 import '../widgets/skeleton_painter.dart';
@@ -58,6 +60,10 @@ class _SessionPageState extends State<SessionPage> {
   bool _isPaused = false;
   bool _nativeSessionStarted = false;
   bool _isClosing = false;
+
+  /// Partial result SMKit saved when it ended the session itself (native or
+  /// camera fault). Delivered just before the fatal sessionError.
+  SmKitRecoveredSession? _recoveredSession;
 
   // Rep / position (regular mode)
   int _reps = 0;
@@ -168,21 +174,18 @@ class _SessionPageState extends State<SessionPage> {
       _nativeSessionStarted = true;
       _maybeStartPendingDetection();
     } catch (e) {
-      if (mounted) _showError('$e');
+      if (mounted) _showError(smkitErrorText(e));
     }
   }
 
+  /// The previous page stops its session in dispose without awaiting it.
+  /// stopSession waits for that stop to finish (and also ends any detection),
+  /// and returns an empty result when no session is running.
   Future<void> _ensurePreviousNativeSessionStopped() async {
     try {
-      await SmKit.stopDetection();
-    } catch (_) {
-      // No active detection is the normal case when this page opens cleanly.
-    }
-    try {
       await SmKit.stopSession();
-      await Future<void>.delayed(const Duration(milliseconds: 750));
-    } catch (_) {
-      // No active native session is the normal case when this page opens cleanly.
+    } on SmKitSessionError {
+      // Nothing to stop; the normal case when this page opens cleanly.
     }
   }
 
@@ -244,13 +247,17 @@ class _SessionPageState extends State<SessionPage> {
         });
         _startTimer();
       }
+    } on SmKitOperationCancelledException {
+      // A stopSession or stopDetection superseded this start; nothing to show.
+      _isStartingDetection = false;
     } catch (e) {
       _isStartingDetection = false;
       _detectionStartRequested = true;
-      if (_isNativeSessionNotReadyError(e)) {
+      if (e is NoSessionRunningException ||
+          e is SessionStopInProgressException) {
         _retryPendingDetectionStart();
       } else if (mounted) {
-        _showError('$e');
+        _showError(smkitErrorText(e));
       }
     }
   }
@@ -277,12 +284,6 @@ class _SessionPageState extends State<SessionPage> {
       if (!mounted) return;
       _maybeStartPendingDetection();
     });
-  }
-
-  bool _isNativeSessionNotReadyError(Object error) {
-    final message = error.toString().toLowerCase();
-    return message.contains('no native session is running') ||
-        message.contains('start a session before starting detection');
   }
 
   /// Finishes the current exercise, saves assessment result, and advances.
@@ -349,7 +350,7 @@ class _SessionPageState extends State<SessionPage> {
         _requestDetectionStart();
       }
     } catch (e) {
-      if (mounted) _showError('$e');
+      if (mounted) _showError(smkitErrorText(e));
     }
   }
 
@@ -366,11 +367,9 @@ class _SessionPageState extends State<SessionPage> {
       }
       _isStartingDetection = false;
       _detectionStartRequested = false;
+      // stopSession returns once the native session and camera are released.
       final result = await SmKit.stopSession();
       _nativeSessionStarted = false;
-      if (!mounted) return;
-      // Allow native side to release camera before navigating away
-      await Future<void>.delayed(const Duration(milliseconds: 650));
       if (!mounted) return;
 
       if (widget.isAssessment) {
@@ -388,9 +387,58 @@ class _SessionPageState extends State<SessionPage> {
       }
     } catch (e) {
       if (mounted) {
-        _showError('$e');
+        _showError(smkitErrorText(e));
         Navigator.of(context).pop();
       }
+    }
+  }
+
+  /// SMKit ended the session itself (fatal sessionError). Nothing native is
+  /// running any more, so show what happened and leave with whatever was saved.
+  Future<void> _onSessionEndedByNative(String message) async {
+    if (_isClosing) return;
+    _isClosing = true;
+    _stopTimer();
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    setState(() {
+      _nativeSessionStarted = false;
+      _isDetecting = false;
+      _isStartingDetection = false;
+      _detectionStartRequested = false;
+    });
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Session ended'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    final recovered = _recoveredSession;
+    if (widget.isAssessment && _assessmentResults.isNotEmpty) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => AssessmentSummaryPage(results: _assessmentResults),
+        ),
+      );
+    } else if (!widget.isAssessment && recovered != null) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => SummaryPage(
+            result: recovered.sessionResult,
+            title: 'Recovered Summary',
+          ),
+        ),
+      );
+    } else {
+      Navigator.of(context).pop();
     }
   }
 
@@ -474,9 +522,10 @@ class _SessionPageState extends State<SessionPage> {
   // ── Event handler ─────────────────────────────────────────────────────────
 
   // Feedbacks that are ROM-depth cues — suppress when already in the green zone
+  // (flutter_smkit reports feedback IDs on both platforms.)
   static const Set<String> _romDepthFeedbacks = {
-    "Let your hands reach a bit further toward the floor.", // JeffersonCurl
-    "Lower your hips a bit further down.", // SquatRegularOverheadStatic
+    FormFeedbackType.jeffersonCurlHandsReach, // JeffersonCurl
+    FormFeedbackType.squatHipCreaseDepth, // SquatRegularOverheadStatic
   };
 
   bool _assessmentInPosition({
@@ -621,8 +670,17 @@ class _SessionPageState extends State<SessionPage> {
       case SmKitSessionEventType.positionData:
         if (event.positionData != null) setState(() {});
         break;
+      case SmKitSessionEventType.sessionRecovered:
+        _recoveredSession = event.recoveredSession;
+        break;
       case SmKitSessionEventType.sessionError:
-        _showError(event.errorMessage ?? event.errorCode ?? 'Unknown error');
+        final message =
+            event.errorMessage ?? event.errorCode ?? 'Unknown error';
+        if (event.isFatal) {
+          unawaited(_onSessionEndedByNative(message));
+        } else {
+          _showError(message);
+        }
         break;
       default:
         break;
@@ -842,7 +900,7 @@ class _SessionPageState extends State<SessionPage> {
                                   color: Colors.orange, size: 18),
                               const SizedBox(width: 6),
                               Expanded(
-                                  child: Text(f,
+                                  child: Text(feedbackDisplayText(f),
                                       style: const TextStyle(
                                           color: Colors.white, fontSize: 16))),
                             ],

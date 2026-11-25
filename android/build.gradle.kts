@@ -2,9 +2,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        // Locally built SMKit 1.8.0 artifacts from the adjacent Android SDK checkout.
-        maven { url = uri("../smkit_android/repo") }
-        // Published releases, used once the 1.8.0 artifacts are available there.
+        // Published SMKit Android releases (flutter_smkit 1.1.8 uses 1.9.9).
         maven { url = uri("https://artifacts.sency.ai/artifactory/release") }
     }
 }

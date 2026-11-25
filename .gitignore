@@ -4,6 +4,13 @@
 *.pyc
 *.swp
 .DS_Store
+
+# Local SDK key (never commit)
+/AuthKey.local.properties
+
+# Local plugin checkout override
+/pubspec_overrides.yaml
+.env
 .atom/
 .build/
 .buildlog/

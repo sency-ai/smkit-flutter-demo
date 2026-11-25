@@ -9,10 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # Use the adjacent checkout until flutter_smkit 1.1.6 is published.
-  flutter_smkit:
-    path: ../flutter-smkit/packages/smkit
-  flutter_dotenv: ^5.1.0
+  # To build against a local plugin checkout instead, see "Local plugin
+  # checkout" in README.md (pubspec_overrides.yaml, git-ignored).
+  flutter_smkit: ^1.1.8
   permission_handler: ^11.3.1
 
 dev_dependencies:
@@ -22,5 +21,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - .env

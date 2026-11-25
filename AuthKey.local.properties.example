@@ -1,0 +1,3 @@
+# Copy to AuthKey.local.properties (git-ignored) and paste your Sency SDK key.
+# Run with: flutter run --dart-define-from-file=AuthKey.local.properties
+SMKIT_AUTH_KEY=

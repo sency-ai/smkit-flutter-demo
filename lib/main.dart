@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_smkit/smkit.dart';
 
+import 'models/smkit_error_text.dart';
 import 'pages/pre_session_page.dart';
 import 'pages/session_page.dart';
+import 'pages/summary_page.dart';
 import 'pages/workout_builder_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: '.env', isOptional: true);
   runApp(const SmKitDemoApp());
 }
 
@@ -53,13 +53,20 @@ class _WelcomePageState extends State<WelcomePage> {
       _configureError = null;
     });
     try {
-      final authKey = dotenv.env['API_PUBLIC_KEY']?.trim() ??
-          const String.fromEnvironment('API_PUBLIC_KEY').trim();
-      if (authKey.isEmpty) {
-        throw StateError('Missing API_PUBLIC_KEY in .env');
+      // Sency SDK key, compiled in at build time. Copy
+      // AuthKey.local.properties.example to AuthKey.local.properties
+      // (git-ignored), set SMKIT_AUTH_KEY, and run with
+      // --dart-define-from-file=AuthKey.local.properties.
+      const authKey = String.fromEnvironment('SMKIT_AUTH_KEY');
+      if (authKey.trim().isEmpty) {
+        throw StateError(
+          'No SDK key. Create AuthKey.local.properties from '
+          'AuthKey.local.properties.example and run with '
+          '--dart-define-from-file=AuthKey.local.properties.',
+        );
       }
       await SmKit.configure(
-        authKey: authKey,
+        authKey: authKey.trim(),
         support3D: false,
         poseModelChoice: SmKitPoseModelChoice.adaptiveChoice,
       );
@@ -69,14 +76,48 @@ class _WelcomePageState extends State<WelcomePage> {
           _isConfiguring = false;
         });
       }
+      await _showRecoveredSessions();
     } catch (e) {
       if (mounted) {
         setState(() {
           _isConfiguring = false;
-          _configureError = '$e';
+          _configureError = smkitErrorText(e);
         });
       }
     }
+  }
+
+  /// Sessions an earlier run of the app could not finish (crash, kill or a
+  /// native fault during teardown). SMKit hands each one back only once.
+  Future<void> _showRecoveredSessions() async {
+    final List<SmKitRecoveredSession> recovered;
+    try {
+      recovered = await SmKit.consumeRecoveredSessionSummaries();
+    } on SmKitSessionError {
+      return;
+    }
+    if (!mounted || recovered.isEmpty) return;
+    final latest = recovered.last;
+    final count = recovered.length;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text(count == 1
+            ? 'Recovered an interrupted session.'
+            : 'Recovered $count interrupted sessions.'),
+        action: SnackBarAction(
+          label: 'View',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SummaryPage(
+                result: latest.sessionResult,
+                title: 'Recovered Summary',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _startSession() {

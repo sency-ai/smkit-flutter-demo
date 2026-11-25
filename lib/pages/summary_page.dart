@@ -44,6 +44,11 @@ class SummaryPage extends StatelessWidget {
                   'timeInPositionPerfect': e.timeInPositionPerfect,
                 if (e.peakRangeOfMotionScore != null)
                   'peakRangeOfMotionScore': e.peakRangeOfMotionScore,
+                if (e.peakRangeOfMotionRawValue != null)
+                  'peakRangeOfMotionRawValue': e.peakRangeOfMotionRawValue,
+                if (e.adaptiveRomPercentage != null)
+                  'adaptiveRomPercentage': e.adaptiveRomPercentage,
+                if (e.adaptiveRom != null) 'adaptiveRom': e.adaptiveRom,
                 if (e.performedReps != null)
                   'performedReps': e.performedReps!
                       .map((r) => {
