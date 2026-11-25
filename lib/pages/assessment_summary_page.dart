@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/assessment_exercise_result.dart';
+import '../models/feedback_display.dart';
 
 /// Mirrors AssessmentSummaryView from the iOS demo.
 /// Shows overall score and a per-exercise breakdown card for each exercise.
@@ -362,7 +363,7 @@ class _ExerciseResultCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          f,
+                          feedbackDisplayText(f),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey.shade700,
